@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>GAFFER '26 · Engine Verification</title>
+<style>
+body{font-family:monospace;background:#0a0f0c;color:#e9f1ea;padding:20px;line-height:1.5;font-size:13px}
+h1{color:#d8b45c;font-family:sans-serif;margin:0 0 16px}
+.test{padding:10px;border-left:3px solid #444;margin:8px 0;background:#0e1411}
+.test.pass{border-color:#3ecf7a}
+.test.fail{border-color:#ff5c5c}
+.test h3{margin:0 0 6px;font-size:14px;color:#fff}
+.test .ok{color:#3ecf7a}
+.test .bad{color:#ff5c5c}
+pre{white-space:pre-wrap;margin:4px 0;color:#93a89b}
+button{padding:8px 16px;background:#d8b45c;color:#1c1506;border:0;font-weight:700;cursor:pointer;font-family:inherit}
+</style>
+</head>
+<body>
+<h1>GAFFER '26 · Engine Verification</h1>
+<p>Runs the simulation determinism, calendar, and xG distribution checks.</p>
+<button onclick="runTests()">RUN TESTS</button>
+<div id="results"></div>
+
+<script type="module">
+import { PRNG, makePRNG, hashString } from '../src/core/prng.js';
+import { newSeedState } from '../src/data/seed.js';
+import { runMatch } from '../src/sim/match/engine.js';
+import { generateSeason, checkThreeInSeven } from '../src/sim/calendar.js';
+import { recomputeLeagueTable } from '../src/domain/invariants.js';
+import { computeXG, expectedResultProbabilities } from '../src/sim/match/xg.js';
+
+window.runTests = async function() {
+  const out = $('#results');
+  out.innerHTML = '';
+  const tests = [
+    testPRNGDeterminism,
+    testSeedState,
+    testCalendar,
+    testMatchDeterminism,
+    testMatchVariation,
+    testXGDistribution,
+    testExpectedProbabilities,
+    testLeagueTableRecompute
+  ];
+  for (const t of tests) {
+    try {
+      await t(out);
+    } catch (e) {
+      const div = document.createElement('div');
+      div.className = 'test fail';
+      div.innerHTML = `<h3 class="bad">✗ ${t.name}</h3><pre>${e.stack || e.message}</pre>`;
+      out.appendChild(div);
+    }
+  }
+};
+
+function $(s) { return document.querySelector(s); }
+
+function log(host, name, status, detail) {
+  const div = document.createElement('div');
+  div.className = 'test ' + (status === 'PASS' ? 'pass' : 'fail');
+  div.innerHTML = `<h3 class="${status==='PASS'?'ok':'bad'}">${status==='PASS'?'✓':'✗'} ${name}</h3><pre>${detail || ''}</pre>`;
+  host.appendChild(div);
+}
+
+async function testPRNGDeterminism(host) {
+  const p1 = new PRNG(12345);
+  const p2 = new PRNG(12345);
+  let same = true;
+  for (let i = 0; i < 100; i++) {
+    if (p1.next() !== p2.next()) { same = false; break; }
+  }
+  log(host, 'PRNG determinism (same seed → same sequence)', same ? 'PASS' : 'FAIL',
+      `100 draws compared; ${same ? 'all identical' : 'differed'}`);
+
+  // Fork test
+  const parent1 = new PRNG(999);
+  const parent2 = new PRNG(999);
+  parent1.next(); parent1.next(); parent1.next();   // consume some
+  const child1 = parent1.fork('match-1');
+  const child2 = parent2.fork('match-1');           // fresh parent, same fork key
+  let forksSame = true;
+  for (let i = 0; i < 100; i++) {
+    if (child1.next() !== child2.next()) { forksSame = false; break; }
+  }
+  log(host, 'PRNG fork determinism (same seed + fork key → same child)', forksSame ? 'PASS' : 'FAIL',
+      `Forks produced ${forksSame ? 'identical' : 'different'} sequences regardless of parent consumption`);
+}
+
+async function testSeedState(host) {
+  const state = newSeedState({ saveId: 'test_save_1' });
+  const userClub = state.entities.clubs.get('cl_RAV');
+  const squadSize = userClub.squadIds.length;
+  log(host, 'Seed state — user squad populated', squadSize === 22 ? 'PASS' : 'FAIL',
+      `RAV squad has ${squadSize} players (expected 22)`);
+
+  const table = recomputeLeagueTable(state);
+  const ravRow = table.find(r => r.clubId === 'cl_RAV');
+  log(host, 'Seed state — RAV has played 8 matches', ravRow?.P === 8 ? 'PASS' : 'FAIL',
+      `RAV P=${ravRow?.P} (expected 8)`);
+
+  const inboxCount = state.inbox.length;
+  log(host, 'Seed state — inbox has 6 messages', inboxCount === 6 ? 'PASS' : 'FAIL',
+      `Inbox: ${inboxCount} messages`);
+}
+
+async function testCalendar(host) {
+  // Generate a season for 18 clubs
+  const state = newSeedState({ saveId: 'test_save_cal' });
+  const clubIds = [...state.entities.clubs.keys()];
+  const rivalries = state.relationships.rivalries.map(r => ({ a: r.a, b: r.b, intensity: r.intensity }));
+  const season = generateSeason(clubIds, rivalries, { startDate: '2026-08-15', seed: 42 });
+
+  log(host, 'Calendar — generates 34 matchweeks', season.length === 34 ? 'PASS' : 'FAIL',
+      `Generated ${season.length} MWs (expected 34)`);
+
+  const totalFixtures = season.reduce((s, mw) => s + mw.fixtures.length, 0);
+  log(host, 'Calendar — 306 total fixtures (34 × 9)', totalFixtures === 306 ? 'PASS' : 'FAIL',
+      `Total fixtures: ${totalFixtures} (expected 306)`);
+
+  // Each club plays 34 matches
+  const clubGameCounts = new Map();
+  for (const mw of season) {
+    for (const fx of mw.fixtures) {
+      clubGameCounts.set(fx.homeId, (clubGameCounts.get(fx.homeId) || 0) + 1);
+      clubGameCounts.set(fx.awayId, (clubGameCounts.get(fx.awayId) || 0) + 1);
+    }
+  }
+  const allPlayed34 = [...clubGameCounts.values()].every(v => v === 34);
+  log(host, 'Calendar — every club plays 34 matches', allPlayed34 ? 'PASS' : 'FAIL',
+      `Game counts: ${[...new Set([...clubGameCounts.values()])].join(',')}`);
+
+  // No 3-in-7 violations
+  const violations = checkThreeInSeven(season);
+  log(host, 'Calendar — no 3-in-7 violations (≤5 acceptable)', violations.length <= 5 ? 'PASS' : 'FAIL',
+      `Violations: ${violations.length}`);
+
+  // Derby spread — Ravensport v Halloway should be at least 8 MWs apart
+  let ravHalFirst = -1, ravHalSecond = -1;
+  for (const mw of season) {
+    for (const fx of mw.fixtures) {
+      const isRavHal = (fx.homeId === 'cl_RAV' && fx.awayId === 'cl_HAL') ||
+                       (fx.homeId === 'cl_HAL' && fx.awayId === 'cl_RAV');
+      if (!isRavHal) continue;
+      if (ravHalFirst < 0) ravHalFirst = mw.matchweek;
+      else ravHalSecond = mw.matchweek;
+    }
+  }
+  const spread = ravHalSecond - ravHalFirst;
+  log(host, 'Calendar — RAV v HAL derby spread ≥8 MWs', spread >= 8 ? 'PASS' : 'FAIL',
+      `First leg MW${ravHalFirst}, second leg MW${ravHalSecond}, spread ${spread}`);
+}
+
+async function testMatchDeterminism(host) {
+  // Run the same match twice with the same seed → identical results
+  const state1 = newSeedState({ saveId: 'test_match_det' });
+  const state2 = newSeedState({ saveId: 'test_match_det' });
+  const fx1 = state1.competitions.league.fixtures.find(f => f.matchweek === 9 && f.homeId === 'cl_DUN');
+  const fx2 = state2.competitions.league.fixtures.find(f => f.matchweek === 9 && f.homeId === 'cl_DUN');
+
+  const prng1 = new PRNG(state1.meta.seed + ':' + fx1.id);
+  const prng2 = new PRNG(state2.meta.seed + ':' + fx2.id);
+
+  const report1 = runMatch({
+    state: state1, fixture: fx1, prng: prng1,
+    emitEvents: false, userIsHome: false, userIsAway: false
+  });
+  const report2 = runMatch({
+    state: state2, fixture: fx2, prng: prng2,
+    emitEvents: false, userIsHome: false, userIsAway: false
+  });
+
+  const identical = report1.score.hs === report2.score.hs &&
+                    report1.score.as === report2.score.as &&
+                    report1.stats.hXG === report2.stats.hXG &&
+                    report1.stats.aXG === report2.stats.aXG;
+
+  log(host, 'Match determinism (same seed → same scoreline & xG)', identical ? 'PASS' : 'FAIL',
+      `Run 1: ${report1.score.hs}-${report1.score.as} (xG ${report1.stats.hXG.toFixed(2)}-${report1.stats.aXG.toFixed(2)})\n` +
+      `Run 2: ${report2.score.hs}-${report2.score.as} (xG ${report2.stats.hXG.toFixed(2)}-${report2.stats.aXG.toFixed(2)})`);
+}
+
+async function testMatchVariation(host) {
+  // Run two matches with DIFFERENT seeds → different results (very likely)
+  const state1 = newSeedState({ saveId: 'test_match_var_1' });
+  const state2 = newSeedState({ saveId: 'test_match_var_2' });
+  const fx1 = state1.competitions.league.fixtures.find(f => f.matchweek === 9 && f.homeId === 'cl_DUN');
+  const fx2 = state2.competitions.league.fixtures.find(f => f.matchweek === 9 && f.homeId === 'cl_DUN');
+
+  const r1 = runMatch({ state: state1, fixture: fx1, prng: new PRNG(state1.meta.seed + ':' + fx1.id), emitEvents: false });
+  const r2 = runMatch({ state: state2, fixture: fx2, prng: new PRNG(state2.meta.seed + ':' + fx2.id), emitEvents: false });
+
+  const different = !(r1.score.hs === r2.score.hs && r1.score.as === r2.score.as && r1.stats.hXG === r2.stats.hXG && r1.stats.aXG === r2.stats.aXG);
+  log(host, 'Match variation (different seeds → different results)', different ? 'PASS' : 'FAIL',
+      `Run 1: ${r1.score.hs}-${r1.score.as} | Run 2: ${r2.score.hs}-${r2.score.as}`);
+}
+
+async function testXGDistribution(host) {
+  // Run 200 matches between evenly-matched sides; check avg total xG is sane (1.5-4.5)
+  const state = newSeedState({ saveId: 'test_xg' });
+  const fx = state.competitions.league.fixtures.find(f => f.matchweek === 9 && f.homeId === 'cl_DUN');
+
+  let totalXG = 0, totalGoals = 0, totalShots = 0;
+  let homeWins = 0, draws = 0, awayWins = 0;
+  const N = 50;
+  for (let i = 0; i < N; i++) {
+    const prng = new PRNG(state.meta.seed + ':' + fx.id + ':' + i);
+    const r = runMatch({ state, fixture: fx, prng, emitEvents: false });
+    totalXG += r.stats.hXG + r.stats.aXG;
+    totalGoals += r.score.hs + r.score.as;
+    totalShots += r.stats.shots[0] + r.stats.shots[1];
+    if (r.score.hs > r.score.as) homeWins++;
+    else if (r.score.hs < r.score.as) awayWins++;
+    else draws++;
+  }
+  const avgXG = totalXG / N;
+  const avgGoals = totalGoals / N;
+  const avgShots = totalShots / N;
+  const saneXG = avgXG >= 1.5 && avgXG <= 4.5;
+  const saneGoals = avgGoals >= 1.5 && avgGoals <= 4.0;
+  log(host, 'xG distribution sanity (avg 1.5-4.5 over 50 matches)', saneXG ? 'PASS' : 'FAIL',
+      `Avg total xG: ${avgXG.toFixed(2)} | Avg total goals: ${avgGoals.toFixed(2)} | Avg shots: ${avgShots.toFixed(1)}\n` +
+      `Homes: ${homeWins} Draws: ${draws} Aways: ${awayWins} (of ${N})`);
+}
+
+async function testExpectedProbabilities(host) {
+  // Evenly-matched sides: home win ~46%, draw ~26%, away win ~28%
+  const p = expectedResultProbabilities(75, 75, true);
+  const sane = p.home > 0.40 && p.home < 0.55 && p.draw > 0.20 && p.draw < 0.32 && p.away > 0.22 && p.away < 0.35;
+  log(host, 'Expected probabilities (even sides: 46/26/28 ish)', sane ? 'PASS' : 'FAIL',
+      `Home: ${(p.home*100).toFixed(1)}% Draw: ${(p.draw*100).toFixed(1)}% Away: ${(p.away*100).toFixed(1)}%`);
+
+  // 20-rating gap → underdog still wins 12-15% at home
+  const p2 = expectedResultProbabilities(60, 80, true);  // 20-point gap, underdog at home
+  const upsetRate = p2.home;
+  const upsetSane = upsetRate >= 0.08 && upsetRate <= 0.25;
+  log(host, 'Upset calibration (20-rating gap underdog at home: 8-25%)', upsetSane ? 'PASS' : 'FAIL',
+      `Underdog home win probability: ${(upsetRate*100).toFixed(1)}%`);
+}
+
+async function testLeagueTableRecompute(host) {
+  // After running a few matches, the league table should reflect them
+  const state = newSeedState({ saveId: 'test_table' });
+  const beforeTable = recomputeLeagueTable(state);
+  const beforeRav = beforeTable.find(r => r.clubId === 'cl_RAV');
+
+  // Simulate MW9 for all clubs (including the user's)
+  const mw9Fixtures = state.competitions.league.fixtures.filter(f => f.matchweek === 9 && f.status === 'scheduled');
+  for (const fx of mw9Fixtures) {
+    const prng = new PRNG(state.meta.seed + ':' + fx.id);
+    const r = runMatch({ state, fixture: fx, prng, emitEvents: false });
+    fx.status = 'played';
+    fx.result = { hs: r.score.hs, as: r.score.as, hXG: r.stats.hXG, aXG: r.stats.aXG, events: r.events, report: r };
+  }
+  const afterTable = recomputeLeagueTable(state);
+  const afterRav = afterTable.find(r => r.clubId === 'cl_RAV');
+
+  log(host, 'League table recompute (RAV played MW9 → P incremented)', afterRav.P === beforeRav.P + 1 ? 'PASS' : 'FAIL',
+      `Before MW9: P=${beforeRav.P} Pts=${beforeRav.Pts} | After MW9: P=${afterRav.P} Pts=${afterRav.Pts}`);
+}
+</script>
+</body>
+</html>
