@@ -36,6 +36,33 @@ import { generateIncomingBids, expireOldBids } from './transfers/sell-side.js';
 import { isWindowOpen, isDeadlineDay, closeWindow } from './transfers/deadline.js';
 import { executeBosmanTransfers, scanBosmanMarket } from './transfers/bosman.js';
 
+// Step 5: finance
+import {
+  tickDailyFinance,
+  handleMatchdayFinance,
+  handleTelevisedMatchFee,
+  handleCupProgressionPrize,
+  processSponsorSatisfactionMatch
+} from './finance/engine.js';
+
+// Step 7: AI Managers & Rival Club Simulation
+import {
+  updateSeasonStrategies,
+  simulateBoardPatienceAndCarousel,
+  updateLeagueMetaTrends,
+  recordTacticalResult
+} from './ai/manager.js';
+
+// Step 6: narrative
+import {
+  detectStorySeeds,
+  updateNarrativeArcs,
+  generateSocialTweets,
+  triggerPreMatchPressConference,
+  triggerScoutPreMatchReport,
+  processPostMatchNarrative
+} from './narrative/engine.js';
+
 // Register ourselves as the tick engine with state.js (breaks circular import).
 registerTickEngine(tick);
 
@@ -109,6 +136,11 @@ export function tick(state, opts = {}) {
 
   if (userFixtureToday) {
     events.push({ type: EVT.MATCHDAY_REACHED, payload: { fixtureId: userFixtureToday.id, date: today } });
+
+    // Step 6: Trigger pre-match press conference and scout reports in the inbox
+    triggerPreMatchPressConference(state, userFixtureToday);
+    triggerScoutPreMatchReport(state, userFixtureToday);
+
     // Signal to UI: open match overlay. The match itself runs when the UI calls startMatch(fixtureId).
     // Other (AI vs AI) fixtures today are simulated silently post-match.
     events.push({ type: EVT.STATE_BATCH, payload: { panel: 'match', openMatchOverlay: userFixtureToday.id } });
@@ -122,6 +154,11 @@ export function tick(state, opts = {}) {
 
   // -------- Recompute league table cache --------
   state.competitions.league.table = recomputeLeagueTable(state);
+
+  // -------- Step 7: AI Managers & Rival Clubs updates --------
+  updateSeasonStrategies(state);
+  simulateBoardPatienceAndCarousel(state);
+  updateLeagueMetaTrends(state);
 
   events.push({ type: EVT.ADVANCE_DAY_END, payload: { date: state.clock.date, day: state.clock.dayNumber } });
 
@@ -200,6 +237,11 @@ function morningPhase(state, prng, speed) {
       }
     }
   }
+
+  // Step 6: Daily narrative ticks (at the end of every morning phase)
+  detectStorySeeds(state, { prng });
+  updateNarrativeArcs(state);
+  generateSocialTweets(state, prng);
 
   if (speed === 'detailed') {
     events.push({ type: EVT.STATE_BATCH, payload: { panel: 'squad' } });
@@ -340,10 +382,8 @@ function eveningPhase(state, prng, speed) {
   const events = [];
   events.push({ type: EVT.PHASE_EVENING, payload: { day: state.clock.dayNumber } });
 
-  // Daily financial accrual (very small)
-  const dailyWages = (state.finance.summary.exp.Wages || 9.4) * 1e6 / 365;
-  const dailyRevenue = (state.finance.summary.inc.Matchday || 4.1) * 1e6 / 365 * 0.3; // ~30% of matchday revenue spread
-  state.finance.balance += dailyRevenue - dailyWages;
+  // Step 5: Advanced Daily Finance simulation (substitutes simple accrual)
+  tickDailyFinance(state, prng);
 
   // Fan sentiment drift toward baseline
   state.media.fanSentiment = state.media.fanSentiment + (71 - state.media.fanSentiment) * 0.02;
@@ -411,6 +451,9 @@ export function commitUserMatch(state, fixtureId, report) {
  * Apply post-match consequences to GameState. Mutates.
  */
 function applyPostMatch(state, fx, report, userInvolved) {
+  // Record tactical results for AI rival manager adaptive memory and rivalry
+  recordTacticalResult(state, fx);
+
   // Form & fitness updates for both squads (we only have user squad players
   // in state.entities.players; AI clubs don't have full squads. So we only
   // touch user players here.)
@@ -486,17 +529,29 @@ function applyPostMatch(state, fx, report, userInvolved) {
     state.board.confidence.Matches = Math.max(0, state.board.confidence.Matches + swing);
   }
 
-  // Matchday revenue (home matches only)
-  if (userIsHome) {
-    const attendance = Math.round((userClub.capacity || 30000) * 0.92);
-    const revenue = attendance * (userClub.ticketPrice || 28);
-    state.finance.balance += revenue;
+  // Step 5: Advanced Matchday finance simulation (substitutes simple home-only gate receipts)
+  const prng = new PRNG(state.meta.seed).fork('day-' + state.clock.dayNumber);
+  handleMatchdayFinance(state, fx, report, prng);
+  handleTelevisedMatchFee(state, fx, prng);
+  handleCupProgressionPrize(state, fx, report);
+  processSponsorSatisfactionMatch(state, fx, report);
+
+  // Check if any player scored a hat-trick (3+ goals)
+  if (report.playerStats) {
+    for (const pStat of report.playerStats) {
+      if (pStat.goals >= 3) {
+        state.finance = state.finance || {};
+        state.finance.hatTrickSpikeDays = 14;
+        logger.info('finance', 'hat-trick shirt sales spike triggered', { player: pStat.name });
+      }
+    }
   }
 
-  // Media headline from result
-  const headline = generateResultHeadline(state, fx, report, userIsHome);
-  state.media.headlines.unshift(headline);
-  state.media.headlines = state.media.headlines.slice(0, 50);
+  // Run the daily finance tick for this matchday
+  tickDailyFinance(state, prng);
+
+  // Step 6: Process post-match narrative director cycle (creates headlines, tweets, post-match press, etc.)
+  processPostMatchNarrative(state, fx, report);
 
   // Manager XP
   const xpGain = won ? 100 + oppRep * 30 : lost ? 20 : 50;

@@ -777,7 +777,7 @@ el.innerHTML=`
       </div></div>
     <div class="panel" style="margin-top:16px"><div class="ph"><span class="t">TREASURY</span></div>
       <div class="pb">
-        <div class="row" style="justify-content:space-between"><div class="kpi gd"><span class="v" data-cu="31.2" data-d="1" data-p="£" data-s="M">£0</span><span class="k">Balance</span></div><div class="kpi"><span class="v">${fmtM(S.budget)}</span><span class="k">Transfer budget</span></div><div class="kpi gr"><span class="v">${FIN.ffp}</span><span class="k">FFP status</span></div></div>
+        <div class="row" style="justify-content:space-between"><div class="kpi gd"><span class="v" data-cu="${(FIN.balance/1e6).toFixed(1)}" data-d="1" data-p="£" data-s="M">£0</span><span class="k">Balance</span></div><div class="kpi"><span class="v">${fmtM(S.budget)}</span><span class="k">Transfer budget</span></div><div class="kpi gr"><span class="v">${FIN.ffp}</span><span class="k">FFP status</span></div></div>
         <div class="hr"></div>
         <div class="barlbl"><span class="l">Wage-to-revenue</span><span class="r">${FIN.wageRatio}%</span></div>
         <div class="bar thin"><i class="${FIN.wageRatio<70?'':'am'}" data-w="${FIN.wageRatio}%"></i></div>

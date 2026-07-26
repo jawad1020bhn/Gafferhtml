@@ -4,6 +4,7 @@
 
 import { logger } from '../../core/logger.js';
 import { groupOf } from '../../domain/entities.js';
+import { getAICongestionPenalty } from '../ai/manager.js';
 
 // Formation slot definitions. Each slot has a position and a "zone" used by
 // the possession model (def/mid/final/box).
@@ -185,8 +186,12 @@ function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
  *   pitch quality: from facilities data
  */
 export function conditionModifiers(state, fixture, homeClub, awayClub) {
+  // Home advantage scales dynamically based on host's fan sentiment!
+  const fanSentiment = state.media?.fanSentiment ?? 71;
+  const homeAdv = 0.02 + (fanSentiment / 100) * 0.04;
+
   const mods = {
-    homeAdvantage: 0.04,
+    homeAdvantage: homeAdv,
     derbyFoulMult: 1.0,
     derbyCardMult: 1.0,
     passAccMod: 0,
@@ -237,10 +242,26 @@ export function aiTacticalProfile(club) {
 export function synthesizeAILineup(state, club, prng) {
   const slots = FORMATIONS[club.tactics.formation] || FORMATIONS['4-4-2'];
   const rng = prng || { next: () => 0.5, range: (a, b) => (a + b) / 2 };
+
+  // Calculate dynamic congestion rating penalty from AI manager system
+  const dateStr = state.clock?.currentDate || '2026-09-01';
+  const congestionPen = getAICongestionPenalty(state, club.id, dateStr);
+
+  // Strategic lineup / internal politics offsets (youth integration / player unrest)
+  let politicsMod = 0;
+  if (club.seasonObjective === 'rebuild' || club.transferStrategy === 'developer') {
+    politicsMod = -1.2; // raw academy talents playing
+  } else if (club.transferStrategy === 'distressed') {
+    politicsMod = -2.5; // roster turmoil and disgruntled high-wage benchings
+  }
+
+  const ratingMod = congestionPen + politicsMod;
+
   // Synthetic ratings: club atk/def drive FWD/MID/DEF respectively
   const starting = slots.map((slotPos, i) => {
     const grp = groupOf(slotPos);
     const base = grp === 'GK' ? 70 : grp === 'DEF' ? club.def : grp === 'MID' ? (club.atk + club.def) / 2 : club.atk;
+    const finalRating = Math.max(20, Math.min(99, base + (rng.next() - 0.5) * 6 + ratingMod));
     return {
       playerId: null,           // synthetic — no player entity
       synthetic: true,
@@ -248,15 +269,15 @@ export function synthesizeAILineup(state, club, prng) {
       slotIdx: i,
       slotPos,
       oopPenalty: 0,
-      effRating: base + (rng.next() - 0.5) * 6,  // deterministic variation
+      effRating: finalRating,
       // Synthetic player attributes used by xG/shot models
       name: `${club.code} ${slotPos}${i}`,
-      finishing: base, composure: base, pace: base,
-      crossing: base, freeKickAccuracy: base,
-      heading: base, jumping: base,
-      tackling: base, marking: base,
-      reflexes: base, positioning: base,
-      stamina: 75 + rng.range(0, 15)
+      finishing: finalRating, composure: finalRating, pace: finalRating,
+      crossing: finalRating, freeKickAccuracy: finalRating,
+      heading: finalRating, jumping: finalRating,
+      tackling: finalRating, marking: finalRating,
+      reflexes: finalRating, positioning: finalRating,
+      stamina: Math.max(20, 75 + rng.range(0, 15) + (congestionPen * 4)) // stamina penalty under congestion
     };
   });
   return {

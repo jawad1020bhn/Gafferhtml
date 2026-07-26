@@ -7,6 +7,12 @@ import { clamp } from '../../core/prng.js';
 import { computeTrueValue } from './valuation.js';
 import { createNegotiation, submitBid, evaluateBid } from './negotiation.js';
 import { EVT } from '../../core/eventBus.js';
+import {
+  addTransaction,
+  processAgentFeeOnSigning,
+  registerAmortization,
+  writeOffAmortizationOnSale
+} from '../finance/engine.js';
 
 /**
  * Recruit identities for AI clubs.
@@ -260,25 +266,37 @@ export function executeTransfer(state, negotiation) {
   player.wage = negotiation.wageOffer || player.wage;
   player.contractUntil = (state.clock.seasonYear || 2026) + 4;
 
-  // Log transaction
-  state.finance = state.finance || { transactions: [] };
+  // Log transaction using the Step 5 Financial Engine
   if (negotiation.buyerClubId === state.meta.userClubId) {
-    state.finance.balance -= fee;
+    // 1. Process transfer fee cash out
+    addTransaction(state, -fee, 'transfer_out', `Transfer fee paid to sign ${player.name}`);
     state.finance.transferBudget -= fee;
-    state.finance.transactions = state.finance.transactions || [];
-    state.finance.transactions.push({
-      id: 'tx_' + Date.now(),
-      date: state.clock.date,
-      amount: -fee, category: 'transfer', note: `Signed ${player.name}`
-    });
+
+    // 2. Process agent commission fee (e.g. 8% commission)
+    processAgentFeeOnSigning(state, player, fee, 8);
+
+    // 3. Register transfer amortization schedule
+    registerAmortization(state, player, fee, 5);
+
+    // 4. Check if marquee signing global merchandise boost is unlocked
+    if (player.ovr >= 82) {
+      state.finance.marqueeSigningBoost = true;
+      logger.info('finance', 'marquee signing global merchandise boost activated', { player: player.name });
+    }
   } else if (negotiation.sellerClubId === state.meta.userClubId) {
-    state.finance.balance += fee;
+    // 1. Process transfer fee cash in
+    addTransaction(state, fee, 'transfer_in', `Transfer fee received for sale of ${player.name}`);
     state.finance.transferBudget += fee;
-    state.finance.transactions = state.finance.transactions || [];
-    state.finance.transactions.push({
-      id: 'tx_' + Date.now(),
-      date: state.clock.date,
-      amount: +fee, category: 'transfer', note: `Sold ${player.name}`
-    });
+
+    // 2. Book unamortized write-off and disposal profit/loss
+    const disposal = writeOffAmortizationOnSale(state, player, fee);
+    logger.info('finance', 'disposal booked', disposal);
+
+    // 3. Sell-on clause trigger (if ex-club has a sell-on clause, e.g. 10%)
+    const sellOnPct = negotiation.currentBid?.sellOnPct || 10;
+    const sellOnGain = Math.round(fee * (sellOnPct / 100));
+    if (sellOnGain > 0) {
+      addTransaction(state, sellOnGain, 'transfer_in', `Sell-on clause profit for ex-club disposal of ${player.name} (${sellOnPct}%)`);
+    }
   }
 }
