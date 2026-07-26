@@ -177,11 +177,11 @@ export function syncLegacyGlobals(state) {
   // -------- FIN (finance summary) --------
   const fsum = state.finance.summary || {};
   window.FIN = {
-    balance: state.finance.balance / 1e6,
-    debt: fsum.debt / 1e6,
+    balance: state.finance.balance,
+    debt: fsum.debt,
     credit: fsum.credit,
     rate: fsum.rate,
-    limit: fsum.limit / 1e6,
+    limit: fsum.limit || 600e6,
     ffp: fsum.ffp,
     wageRatio: fsum.wageRatio,
     inc: fsum.inc,
@@ -234,6 +234,30 @@ export function syncLegacyGlobals(state) {
   window.ACTIVITY = state.activity;
   window.WORLDECON = state.worldEcon;
   window.BRAND = state.brand;
+
+  // Expose opponent manager dossiers, skills, and rivalry status to the UI
+  const opponentManagers = [];
+  for (const club of state.entities.clubs.values()) {
+    if (club.id === state.meta.userClubId) continue;
+    const mgr = state.entities.staff.get(club.managerId);
+    if (mgr) {
+      opponentManagers.push({
+        name: mgr.name,
+        clubCode: club.code,
+        clubName: club.name,
+        age: mgr.age,
+        nat: mgr.nat,
+        rating: mgr.rating,
+        philosophy: mgr.philosophy,
+        preferredFormation: mgr.preferredFormation,
+        skills: mgr.skills,
+        patience: mgr.patience,
+        rivalry: state.managerTacticalMemory?.[mgr.id] || { rivalryRating: 0, userWins: 0, userLosses: 0, draws: 0 }
+      });
+    }
+  }
+  window.OPPONENT_MANAGERS = opponentManagers;
+
   window.OUTLETS = {
     'Sports Central': 'Major',
     'The Meridian Times': 'Quality',
@@ -250,10 +274,12 @@ export function syncLegacyGlobals(state) {
   }));
 
   // -------- NEWS / SOCIAL --------
-  window.NEWS = state.media.headlines.map(h => ({
+  window.NEWS = (state.media.headlines || []).map(h => ({
     o: h.outlet, cat: h.cat, t: h.t, b: h.b, ago: h.ago, likes: h.likes
   }));
-  window.SOCIAL = [];  // not yet simulated; legacy UI gracefully handles empty
+  window.SOCIAL = (state.media.socialTweets || []).map(s => ({
+    h: s.h, v: s.v ? 1 : 0, j: s.j ? 1 : 0, t: s.t, l: s.l, c: s.c
+  }));
 
   // -------- LEADERS (scorers/assists) — derived from user club only for now --------
   const userScorers = window.PLAYERS

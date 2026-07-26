@@ -15,6 +15,7 @@ import { bus, EVT } from '../../core/eventBus.js';
 import { PRNG } from '../../core/prng.js';
 
 import { lockLineup, tacticalMatchupMatrix, conditionModifiers, aiTacticalProfile, synthesizeAILineup, FORMATIONS } from './prematch.js';
+import { adaptTacticsToUser } from '../ai/manager.js';
 import { allocatePossession, simulatePossession, isCounterAttack } from './possession.js';
 import { computeXG, pickShotZone, pickShotType } from './xg.js';
 import { resolveShot, resolveRebound, gkDistribution } from './shot.js';
@@ -42,6 +43,13 @@ export function runMatch(opts) {
   if (!homeClub || !awayClub) {
     logger.error('match', 'club not found for fixture', { fixtureId: fixture.id });
     return null;
+  }
+
+  // ---- Dynamic tactical adaptation to user's setup ----
+  if (userIsHome) {
+    adaptTacticsToUser(state, fixture.awayId);
+  } else if (userIsAway) {
+    adaptTacticsToUser(state, fixture.homeId);
   }
 
   // ---- 1. Prematch: lineups, tactics, conditions ----

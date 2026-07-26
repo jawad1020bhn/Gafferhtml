@@ -9,6 +9,7 @@ import { initNewGame, getState, setState, dispatch, A, sel, setSpeed } from './c
 import { load, save, listSaves } from './core/persistence.js';
 import { syncLegacyGlobals, rerender } from './ui/panels.js';
 import { engineKickOff } from './ui/matchOverlay.js';
+import { triggerStadiumExpansion } from './sim/finance/engine.js';
 // Import tick.js as a side effect — it registers the tick engine with
 // state.js via registerTickEngine(). Without this, ADVANCE_DAY is a no-op.
 import './sim/tick.js';
@@ -142,6 +143,15 @@ window.addEventListener('beforeunload', () => {
   save(getState(), 'autosave');
 });
 
+// -------- 7b. Hook legacy inbox resolution to dispatch RESOLVE_MESSAGE --------
+const originalResolveMsg = window.resolveMsg;
+window.resolveMsg = (id, ci) => {
+  dispatch({ type: A.RESOLVE_MESSAGE, payload: { messageId: id, choiceIndex: ci } });
+  if (typeof originalResolveMsg === 'function') {
+    originalResolveMsg(id, ci);
+  }
+};
+
 // -------- 8. Initial render --------
 // The legacy script's initial render calls are disabled; we do them here.
 if (typeof window.renderHeader === 'function') window.renderHeader();
@@ -183,5 +193,15 @@ window.GAME = {
     signFreeAgent: (freeAgentId, wage) => dispatch({ type: A.SIGN_FREE_AGENT, payload: { freeAgentId, wage } }),
     loanPlayer: (playerId, loaningClubId, opts) => dispatch({ type: A.LOAN_PLAYER, payload: { playerId, loaningClubId, ...opts } }),
     recallLoan: (loanId) => dispatch({ type: A.RECALL_LOAN, payload: { loanId } })
+  },
+  stadium: {
+    triggerExpansion: () => {
+      const res = triggerStadiumExpansion(getState());
+      if (res) {
+        syncLegacyGlobals(getState());
+        rerender();
+      }
+      return res;
+    }
   }
 };
