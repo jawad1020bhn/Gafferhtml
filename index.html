@@ -387,6 +387,65 @@ input[type=range]::-moz-range-thumb{width:11px;height:11px;background:var(--gold
 <div class="ovl" id="ovl-clubx"><div class="ovl-card" style="inset:110px 320px"><button class="ovl-x" onclick="closeOvl('ovl-clubx')">✕</button><div id="clubxBody" class="ovl-scroll"></div></div></div>
 <div class="ovl" id="ovl-match"><div class="ovl-card"><div id="matchBody" style="height:100%;overflow-y:auto"></div></div></div>
 
+<!-- Step 8 Shell Overlays -->
+<div class="ovl" id="ovl-boot" style="display:block;background:#050807;z-index:999">
+  <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:40px;position:relative">
+    <div id="boot-studio" class="rv" style="text-align:center;transition:opacity 0.6s">
+      <div class="sb" style="font-family:var(--cp);font-size:12px;letter-spacing:.3em;color:var(--dim)">A STUDIO EXCLUSIVE</div>
+      <h1 class="big" style="font-size:36px;color:var(--ink);letter-spacing:.1em;margin-top:10px">SPORTS LABS</h1>
+    </div>
+    <div id="boot-title" style="display:none;text-align:center;animation:scrIn 0.8s">
+      <div style="display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:6px">
+        <div style="width:24px;height:4px;background:var(--gold);transform:skewX(-20deg)"></div>
+        <h1 class="big" style="font-size:96px;color:var(--ink);letter-spacing:.02em;line-height:0.85">GAFFER <span style="color:var(--gold2)">'26</span></h1>
+        <div style="width:24px;height:4px;background:var(--gold);transform:skewX(-20deg)"></div>
+      </div>
+      <div class="sb" style="font-family:var(--cp);font-size:11px;letter-spacing:.4em;color:var(--mut);text-transform:uppercase">Football Management Simulator</div>
+      <div style="margin-top:50px;display:flex;flex-direction:column;gap:12px;align-items:center;min-width:320px">
+        <button class="btn gold" style="width:100%;height:44px" id="btnBootContinue" onclick="window.GAME.bootContinue()"><span>CONTINUE CAREER ▸</span></button>
+        <button class="btn" style="width:100%;height:44px" onclick="window.GAME.openSetup()"><span>NEW CAREER SETUP</span></button>
+        <button class="btn sm" style="width:100%" onclick="window.GAME.openSettingsOvl()"><span>SETTINGS & ACCESSIBILITY</span></button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="ovl" id="ovl-setup"><div class="ovl-card" style="inset:46px 120px">
+  <button class="ovl-x" onclick="closeOvl('ovl-setup')">✕</button>
+  <div class="phead"><div class="povr"><span class="pos DEF" style="font-size:14px">STEP</span><span class="bigovr" id="setupStepNum" style="font-size:64px">1</span></div>
+    <div><h2 class="big" style="font-size:38px">NEW CAREER SETUP</h2><div class="dim" style="font-size:12px">Configure your management experience and accept your contract directive</div></div>
+  </div>
+  <div class="ovl-scroll" id="setupBody" style="padding:24px 34px"></div>
+</div></div>
+
+<div class="ovl" id="ovl-resume"><div class="ovl-card" style="inset:90px 200px">
+  <button class="ovl-x" onclick="closeOvl('ovl-resume')">✕</button>
+  <div class="phead" style="background:linear-gradient(90deg, rgba(216,180,92,.08), transparent)"><div class="povr"><span class="pos MID" style="font-size:13px">STATUS</span><span class="bigovr" style="font-size:44px;color:var(--gold2)">HQ</span></div>
+    <div><h2 class="big" style="font-size:38px" id="resumeTitle">WHILE YOU WERE AWAY...</h2><div class="dim" style="font-size:12px">Opposition scouting and contract priority briefing logs</div></div>
+  </div>
+  <div class="ovl-scroll" id="resumeBody" style="padding:24px 34px"></div>
+</div></div>
+
+<div class="ovl" id="ovl-settings"><div class="ovl-card" style="inset:90px 240px">
+  <button class="ovl-x" onclick="closeOvl('ovl-settings')">✕</button>
+  <div class="phead"><div class="povr"><span class="pos GK" style="font-size:13px">SYSTEM</span><span class="bigovr" style="font-size:44px">SET</span></div>
+    <div><h2 class="big" style="font-size:38px">SETTINGS & ACCESSIBILITY</h2><div class="dim" style="font-size:12px">Modify visual, simulation detail, and accessibility parameters</div></div>
+  </div>
+  <div class="ovl-scroll" id="settingsBody" style="padding:24px 34px"></div>
+</div></div>
+
+<div class="ovl" id="ovl-pause" style="background:rgba(4,7,6,.92)"><div class="ovl-card" style="inset:120px 340px;border-color:var(--gold)">
+  <div class="phead" style="text-align:center;justify-content:center"><div class="row" style="gap:12px"><div style="width:14px;height:4px;background:var(--gold);transform:skewX(-20deg)"></div><h2 class="big" style="font-size:32px">SIMULATION PAUSED</h2><div style="width:14px;height:4px;background:var(--gold);transform:skewX(-20deg)"></div></div></div>
+  <div class="ovl-scroll" style="display:flex;flex-direction:column;gap:12px;padding:24px 40px;align-items:center">
+    <button class="btn gold" style="width:100%" onclick="closeOvl('ovl-pause')"><span>RESUME CAREER</span></button>
+    <button class="btn" style="width:100%" onclick="window.GAME.saveManualSlot()"><span>SAVE GAME STATE</span></button>
+    <button class="btn" style="width:100%" onclick="window.GAME.openLoadSlotOvl()"><span>LOAD CAREER SLOT</span></button>
+    <button class="btn" style="width:100%" onclick="window.GAME.openSettingsOvl();closeOvl('ovl-pause')"><span>SETTINGS & ACCESSIBILITY</span></button>
+    <button class="btn" style="width:100%" onclick="window.GAME.viewSeasonHistory()"><span>VIEW SEASON HISTORY</span></button>
+    <button class="btn dngr" style="width:100%" onclick="window.GAME.exitToTitle()"><span>EXIT TO MAIN MENU</span></button>
+  </div>
+</div></div>
+
 <div id="toasts"></div>
 
 <script>

@@ -234,6 +234,9 @@ export function syncLegacyGlobals(state) {
   window.ACTIVITY = state.activity;
   window.WORLDECON = state.worldEcon;
   window.BRAND = state.brand;
+  window.SETTINGS = state.settings || {};
+  window.ACHIEVEMENTS = state.achievements || [];
+  window.RECORDS = state.history?.records || {};
 
   // Expose opponent manager dossiers, skills, and rivalry status to the UI
   const opponentManagers = [];
