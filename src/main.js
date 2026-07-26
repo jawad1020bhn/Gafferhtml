@@ -218,7 +218,7 @@ logger.info('main', 'bootstrap complete', {
 // ============================================
 
 // Boot Sequence: Cold start Studio card timers
-window.addEventListener('DOMContentLoaded', () => {
+function initBootSequence() {
   const bootStudio = $('#boot-studio');
   const bootTitle = $('#boot-title');
 
@@ -252,7 +252,13 @@ window.addEventListener('DOMContentLoaded', () => {
     btnBootContinue.style.pointerEvents = 'none';
     btnBootContinue.innerHTML = `<span>NO SAVE DETECTED</span>`;
   }
-});
+}
+
+if (document.readyState === 'loading') {
+  window.addEventListener('DOMContentLoaded', initBootSequence);
+} else {
+  initBootSequence();
+}
 
 // Setup Wizard Controllers
 window.GAME_SHELL = {
