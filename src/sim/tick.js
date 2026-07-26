@@ -53,6 +53,16 @@ import {
   recordTacticalResult
 } from './ai/manager.js';
 
+// Step 8 & 9: Save System, Settings, Shell & Texture Layers
+import {
+  processEndOfSeason,
+  updateJobSecurity,
+  processInternationalBreak,
+  triggerAIClubAdministration,
+  applyFestivePileupFatigue,
+  clearFestivePileup
+} from './shell/engine.js';
+
 // Step 6: narrative
 import {
   detectStorySeeds,
@@ -78,6 +88,37 @@ export function tick(state, opts = {}) {
   const currentDate = new Date(state.clock.date);
   currentDate.setDate(currentDate.getDate() + 1);
   state.clock.date = currentDate.toISOString().slice(0, 10);
+
+  const curMonth = currentDate.getMonth();
+  const curDay = currentDate.getDate();
+
+  // Step 8 & 9 Shell & Texture Triggers
+  // A. End of Season Transition: May 31
+  if (curMonth === 4 && curDay === 31) {
+    processEndOfSeason(state);
+  }
+
+  // B. Festive Pile-up Fatigue multipliers (Dec & Jan)
+  if (curMonth === 11 || curMonth === 0) {
+    applyFestivePileupFatigue(state);
+  } else {
+    clearFestivePileup(state);
+  }
+
+  // C. International Breaks (Oct 15 and March 15)
+  if ((curMonth === 9 || curMonth === 2) && curDay === 15) {
+    processInternationalBreak(state, prng);
+  }
+
+  // D. AI Club Administration Crisis & Fire Sale (Nov 28)
+  if (curMonth === 10 && curDay === 28) {
+    triggerAIClubAdministration(state, 'OAK');
+  }
+
+  // E. Monthly Job Security Ultimatum Checks (Day 28 of every month)
+  if (curDay === 28) {
+    updateJobSecurity(state);
+  }
 
   events.push({ type: EVT.ADVANCE_DAY_START, payload: { date: state.clock.date, day: state.clock.dayNumber } });
 
