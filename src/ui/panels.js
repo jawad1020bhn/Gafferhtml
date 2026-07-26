@@ -110,11 +110,11 @@ export function syncLegacyGlobals(state) {
       const homeCode = state.entities.clubs.get(f.homeId)?.code || '???';
       const awayCode = state.entities.clubs.get(f.awayId)?.code || '???';
       const userIsHome = f.homeId === userId;
+      // Legacy FIX used user-perspective hs/as. We preserve that for compat.
       const hs = f.result ? (userIsHome ? f.result.hs : f.result.as) : null;
       const as = f.result ? (userIsHome ? f.result.as : f.result.hs) : null;
-      // Legacy FIX used user-perspective hs/as. We preserve that for compat.
-      const realHomeScore = f.result?.hs;
-      const realAwayScore = f.result?.as;
+      const realHomeScore = f.result ? f.result.hs : null;
+      const realAwayScore = f.result ? f.result.as : null;
       return {
         mw: f.matchweek || 0,
         d: formatLegacyDate(f.date),

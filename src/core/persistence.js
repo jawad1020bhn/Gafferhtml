@@ -20,7 +20,24 @@ const NON_PERSISTED_PATHS = new Set([
  * Strip recomputable cache fields before serialising.
  */
 function serialise(state) {
-  const slim = { ...state };
+  const slim = {
+    ...state,
+    entities: {
+      ...state.entities,
+      clubs: Object.fromEntries(state.entities.clubs || new Map()),
+      players: Object.fromEntries(state.entities.players || new Map()),
+      staff: Object.fromEntries(state.entities.staff || new Map()),
+      agents: Object.fromEntries(state.entities.agents || new Map()),
+      facilities: Object.fromEntries(state.entities.facilities || new Map()),
+      sponsors: Object.fromEntries(state.entities.sponsors || new Map())
+    },
+    relationships: {
+      ...state.relationships,
+      contracts: Object.fromEntries(state.relationships.contracts || new Map()),
+      negotiations: Object.fromEntries(state.relationships.negotiations || new Map()),
+      scoutAssignments: Object.fromEntries(state.relationships.scoutAssignments || new Map())
+    }
+  };
   for (const k of NON_PERSISTED_PATHS) delete slim[k];
   return JSON.stringify(slim);
 }
@@ -76,6 +93,22 @@ export function load(slotName = AUTOSAVE_SLOT) {
     logger.error('persistence', 'state JSON parse failed', { slot: slotName, err: String(e) });
     return null;
   }
+
+  // Re-hydrate Maps
+  if (state.entities) {
+    state.entities.clubs = new Map(Object.entries(state.entities.clubs || {}));
+    state.entities.players = new Map(Object.entries(state.entities.players || {}));
+    state.entities.staff = new Map(Object.entries(state.entities.staff || {}));
+    state.entities.agents = new Map(Object.entries(state.entities.agents || {}));
+    state.entities.facilities = new Map(Object.entries(state.entities.facilities || {}));
+    state.entities.sponsors = new Map(Object.entries(state.entities.sponsors || {}));
+  }
+  if (state.relationships) {
+    state.relationships.contracts = new Map(Object.entries(state.relationships.contracts || {}));
+    state.relationships.negotiations = new Map(Object.entries(state.relationships.negotiations || {}));
+    state.relationships.scoutAssignments = new Map(Object.entries(state.relationships.scoutAssignments || {}));
+  }
+
   return migrate(state, payload.schemaVersion, SCHEMA_VERSION);
 }
 
